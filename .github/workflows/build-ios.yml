@@ -1,0 +1,81 @@
+name: Build VHX iOS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'vhx-test/**'
+      - '.github/workflows/build-ios.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Inspect Xcode SDKs
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk macosx --show-sdk-path
+
+      - name: Compile macOS test binary and run integration tests
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror \
+            -framework Foundation vhx-test/main.m -o build/vhx-test-macos
+          python3 vhx-test/verify.py build/vhx-test-macos
+
+      - name: Compile iOS arm64 binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ios12-arm64 dist/ios15-arm64
+          for minimum in 12 15; do
+            xcrun --sdk iphoneos clang -arch arm64 \
+              -miphoneos-version-min="${minimum}.0" \
+              -fobjc-arc -fblocks -O2 -Wall -Wextra -Werror \
+              -framework Foundation vhx-test/main.m \
+              -o "dist/ios${minimum}-arm64/vhx-test"
+          done
+
+      - name: Sign iOS binaries
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          set -euo pipefail
+          if ! command -v ldid >/dev/null 2>&1; then
+            brew install ldid
+          fi
+          for minimum in 12 15; do
+            binary="dist/ios${minimum}-arm64/vhx-test"
+            ldid -S "$binary"
+            chmod 755 "$binary"
+            file "$binary"
+            xcrun lipo -verify_arch arm64 "$binary"
+            xcrun otool -l "$binary" > "dist/ios${minimum}-arm64/macho-load-commands.txt"
+          done
+
+      - name: Package downloads
+        run: |
+          set -euo pipefail
+          cp vhx-test/README_zh.md dist/README_zh.md
+          printf '%s\n' "$GITHUB_SHA" > dist/source-commit.txt
+          (cd dist && shasum -a 256 ios12-arm64/vhx-test ios15-arm64/vhx-test > SHA256SUMS.txt)
+          tar -czf build/vhx-test-ios-arm64.tar.gz -C dist .
+
+      - name: Upload compiled binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhx-test-ios-arm64
+          path: build/vhx-test-ios-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
