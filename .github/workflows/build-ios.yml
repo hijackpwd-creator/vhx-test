@@ -60,7 +60,7 @@ jobs:
             ldid -S "$binary"
             chmod 755 "$binary"
             file "$binary"
-            xcrun lipo -verify_arch arm64 "$binary"
+            xcrun lipo "$binary" -verify_arch arm64
             xcrun otool -l "$binary" > "dist/ios${minimum}-arm64/macho-load-commands.txt"
           done
 
