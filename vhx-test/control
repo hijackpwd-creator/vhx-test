@@ -1,0 +1,8 @@
+Package: local.vhx-test
+Name: VHX Test
+Version: 1.0.1
+Architecture: iphoneos-arm
+Description: Standalone GET /vhx connectivity test
+Maintainer: Local
+Author: Local
+Section: Utilities
